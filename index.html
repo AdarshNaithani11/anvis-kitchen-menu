@@ -143,7 +143,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--a2);outline-offset:
 
 /* ---------- welcome intro (three.js) ---------- */
 #intro{position:fixed;inset:0;z-index:100;background:radial-gradient(120% 90% at 50% 60%,#1B1206,#0A0A0C 62%);cursor:pointer;
-  transition:opacity .8s ease;-webkit-tap-highlight-color:transparent;overflow:hidden}
+  transition:opacity 1.4s ease-in-out;-webkit-tap-highlight-color:transparent;overflow:hidden}
 #intro.bye{opacity:0;pointer-events:none}
 #intro canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 #intro .line{position:absolute;left:0;right:0;text-align:center;font:600 .8rem var(--body);letter-spacing:.34em;text-transform:uppercase;
@@ -165,6 +165,17 @@ html.intro-on body *:not(#intro):not(#intro *){animation-play-state:paused!impor
 @keyframes ring{from{transform:scale(1);opacity:.7}to{transform:scale(1.3,1.6);opacity:0}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
+
+<script>
+/* cover the page straight away so the welcome animation is the first thing seen */
+(function(){
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var d = document.createElement("div"); d.id = "intro";
+  d.innerHTML = '<div class="line" id="introLine">Bites · Flavors · Beats</div><div class="skip">Tap to skip</div>';
+  document.body.appendChild(d); document.documentElement.classList.add("intro-on");
+  window.__introFail = setTimeout(function(){ d.remove(); document.documentElement.classList.remove("intro-on"); }, 12000);
+})();
+</script>
 
 <header class="hero">
   <button class="mode" id="mode" type="button" data-mode="light" aria-label="Switch to dark mode">
@@ -320,26 +331,27 @@ document.getElementById("copy").addEventListener("click", function(){
 </script>
 <script>
 /* Welcome intro: glowing embers swirl in and assemble into "Welcome to Anvi's Kitchen",
-   hold, then burst away to reveal the menu. Tap anywhere to skip. */
+   hold, then drift upward like smoke, left to right, while the menu fades in underneath. Tap anywhere to skip. */
 (function(){
-  if (!window.THREE || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const T = window.THREE, root = document.documentElement;
-  const box = document.createElement("div"); box.id = "intro";
-  box.innerHTML = '<div class="line" id="introLine">Bites · Flavors · Beats</div><div class="skip">Tap to skip</div>';
-  let renderer, raf = 0, done = false;
+  const box = document.getElementById("intro"), root = document.documentElement;
+  if (!box) return;
+  const bail = () => { clearTimeout(window.__introFail); box.remove(); root.classList.remove("intro-on"); };
+  if (!window.THREE) { bail(); return; }
+  clearTimeout(window.__introFail);
+  const T = window.THREE;
+  let renderer, raf = 0, done = false, leaving = false;
   function finish(){
-    if (done) return; done = true;
+    if (leaving) return; leaving = true;
     root.classList.remove("intro-on"); box.classList.add("bye");
-    setTimeout(() => { cancelAnimationFrame(raf); try { renderer && renderer.dispose(); } catch (_) {} box.remove(); }, 850);
+    setTimeout(() => { done = true; cancelAnimationFrame(raf); try { renderer && renderer.dispose(); } catch (_) {} box.remove(); }, 1450);
   }
   try {
     renderer = new T.WebGLRenderer({antialias:false, alpha:true});
-  } catch (_) { return; }
+  } catch (_) { bail(); return; }
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   box.insertBefore(renderer.domElement, box.firstChild);
-  document.body.appendChild(box); root.classList.add("intro-on");
   box.addEventListener("click", () => { skipAt = skipAt || clock(); });
-  const safety = setTimeout(finish, 9000);
+  const safety = setTimeout(finish, 10000);
   let skipAt = 0, t0 = 0; const clock = () => (performance.now() - t0) / 1000;
 
   const fontsReady = Promise.race([
@@ -382,19 +394,27 @@ document.getElementById("copy").addEventListener("click", function(){
 
     const pos = new Float32Array(n*3), col = new Float32Array(n*3);
     const tx = new Float32Array(n), ty = new Float32Array(n), sx = new Float32Array(n), sy = new Float32Array(n), sz = new Float32Array(n);
-    const dl = new Float32Array(n), sp = new Float32Array(n), ph = new Float32Array(n), ex = new Float32Array(n), ey = new Float32Array(n), ez = new Float32Array(n);
+    const dl = new Float32Array(n), sp = new Float32Array(n), ph = new Float32Array(n), ex = new Float32Array(n), ey = new Float32Array(n), ez = new Float32Array(n), od = new Float32Array(n), alpha = new Float32Array(n);
     for (let i = 0; i < n; i++){
       tx[i] = (pts[i*5] - x0) / tw - .5; ty[i] = -((pts[i*5+1] - y0) / tw - blockAspect/2);
       col[i*3] = pts[i*5+2]; col[i*3+1] = pts[i*5+3]; col[i*3+2] = pts[i*5+4];
       const a = Math.random()*6.283, r = .9 + Math.random()*.9;
       sx[i] = Math.cos(a)*r; sz[i] = Math.sin(a)*r*.6; sy[i] = (Math.random()*2 - 1)*1.3;
       dl[i] = Math.random()*.55 + (tx[i] + .5)*.25; sp[i] = (Math.random() < .5 ? -1 : 1) * (.6 + Math.random()*.8); ph[i] = Math.random()*6.283;
-      ex[i] = tx[i]*1.6 + (Math.random()-.5)*.9; ey[i] = ty[i]*1.6 + (Math.random()-.5)*.9 + .5; ez[i] = (Math.random()-.5)*2.2;
+      ex[i] = .12 + (Math.random()-.5)*.5; ey[i] = .55 + Math.random()*.6; ez[i] = (Math.random()-.5)*.6;
+      od[i] = (tx[i] + .5)*.45 + Math.random()*.25; alpha[i] = 1;
     }
     const geo = new T.BufferGeometry();
     geo.setAttribute("position", new T.BufferAttribute(pos, 3)); geo.setAttribute("color", new T.BufferAttribute(col, 3));
-    const mat = new T.PointsMaterial({size:1, map:sprite, vertexColors:true, transparent:true, depthWrite:false, opacity:0});
-    const glow = new T.PointsMaterial({size:1, map:sprite, vertexColors:true, transparent:true, depthWrite:false, opacity:0, blending:T.AdditiveBlending});
+    geo.setAttribute("alpha", new T.BufferAttribute(alpha, 1));
+    /* points with their own fade, so each spark can dissolve separately */
+    const VS = "attribute float alpha; uniform float uSize; uniform float uScale; varying vec3 vC; varying float vA;" +
+      "void main(){ vC = color; vA = alpha; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = uSize * uScale / -mv.z; gl_Position = projectionMatrix * mv; }";
+    const FS = "uniform sampler2D uMap; uniform float uOpacity; varying vec3 vC; varying float vA;" +
+      "void main(){ float a = texture2D(uMap, gl_PointCoord).a * vA * uOpacity; if (a < .004) discard; gl_FragColor = vec4(vC, a); }";
+    const mk = add => new T.ShaderMaterial({vertexShader:VS, fragmentShader:FS, vertexColors:true, transparent:true, depthWrite:false,
+      blending: add ? T.AdditiveBlending : T.NormalBlending, uniforms:{uMap:{value:sprite}, uOpacity:{value:0}, uSize:{value:1}, uScale:{value:1}}});
+    const mat = mk(false), glow = mk(true);
     group.add(new T.Points(geo, glow)); group.add(new T.Points(geo, mat));
 
     /* drifting embers in the background */
@@ -410,7 +430,8 @@ document.getElementById("copy").addEventListener("click", function(){
       renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
       const vh = 2 * 100 * Math.tan(25 * Math.PI / 180), vw = vh * cam.aspect;
       const s = Math.min(vw * .86, vh * .5 / blockAspect); group.scale.setScalar(s);
-      mat.size = s * STEP / tw * 2.3; glow.size = mat.size * 3.2; emat.size = s * .012;
+      mat.uniforms.uSize.value = s * STEP / tw * 2.3; glow.uniforms.uSize.value = mat.uniforms.uSize.value * 3.2; emat.size = s * .012;
+      mat.uniforms.uScale.value = glow.uniforms.uScale.value = renderer.domElement.height * .5;
       line.style.top = (h/2 + (s * blockAspect / 2) / vh * h + 26) + "px";
     }
     fit(); addEventListener("resize", fit);
@@ -419,28 +440,32 @@ document.getElementById("copy").addEventListener("click", function(){
     function frame(){
       if (done) return; raf = requestAnimationFrame(frame);
       const t = clock(), tOut = skipAt ? Math.min(skipAt, HOLD) : HOLD;
-      let o = (t - tOut) / .8; o = o < 0 ? 0 : o > 1 ? 1 : o; const o2 = o*o*2.6;
+      const lt = t - tOut; let o = lt / 2; o = o < 0 ? 0 : o > 1 ? 1 : o;
       for (let i = 0; i < n; i++){
         let e = (t - IN - dl[i]) / DUR; e = e < 0 ? 0 : e > 1 ? 1 : e; e = 1 - (1-e)*(1-e)*(1-e);
         const k = 1 - e, ox = (sx[i]-tx[i])*k, oz = sz[i]*k, a = k*k*3.4*sp[i], ca = Math.cos(a), sa = Math.sin(a);
         let x = tx[i] + ox*ca - oz*sa, z = ox*sa + oz*ca, y = ty[i] + (sy[i]-ty[i])*k;
         if (k === 0){ x += Math.sin(t*3 + ph[i])*.0016; y += Math.cos(t*2.6 + ph[i])*.0016; }
-        if (o2){ x += ex[i]*o2; y += ey[i]*o2; z += ez[i]*o2; }
+        if (lt > 0){
+          /* each spark lets go in turn (left to right), rises and curls away, fading as it goes */
+          let q = (lt - od[i]) / 1.15; q = q < 0 ? 0 : q > 1 ? 1 : q; const q2 = q*q*(3 - 2*q), w = Math.sin(q*4.5 + ph[i]) * .045 * q;
+          x += ex[i]*q2 + w; y += ey[i]*q2*q; z += ez[i]*q2; alpha[i] = 1 - q2;
+        }
         pos[i*3] = x; pos[i*3+1] = y; pos[i*3+2] = z;
       }
-      geo.attributes.position.needsUpdate = true;
+      geo.attributes.position.needsUpdate = true; if (lt > 0) geo.attributes.alpha.needsUpdate = true;
       for (let i = 0; i < m; i++){
         const yy = ((eb[i*4+1] + t*eb[i*4+3]) % 3) - 1.5;
         epos[i*3] = eb[i*4] + Math.sin(t*.9 + i)*.05; epos[i*3+1] = yy; epos[i*3+2] = eb[i*4+2];
       }
       egeo.attributes.position.needsUpdate = true;
       const fin = Math.min(t / .5, 1);
-      mat.opacity = .95 * fin * (1 - o*.9); glow.opacity = .3 * fin * (1 - o); emat.opacity = .75 * fin * (1 - o);
-      cam.position.x = Math.sin(t*.55)*5; cam.position.y = Math.cos(t*.4)*2.5; cam.lookAt(0,0,0);
+      mat.uniforms.uOpacity.value = .95 * fin; glow.uniforms.uOpacity.value = .3 * fin; emat.opacity = .75 * fin * (1 - o);
+      cam.position.x = Math.sin(t*.55)*5; cam.position.y = Math.cos(t*.4)*2.5; cam.position.z = 100 - o*o*(3 - 2*o)*7; cam.lookAt(0,0,0);
       renderer.render(scene, cam);
       if (t > IN + DUR + .45 && !o) line.classList.add("show");
       if (o) line.classList.remove("show");
-      if (t > tOut + .25){ clearTimeout(safety); finish(); }
+      if (lt > .85){ clearTimeout(safety); finish(); }
     }
     frame();
   }
